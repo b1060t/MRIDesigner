@@ -1,0 +1,52 @@
+{
+    "global": {
+        "resolution": 0.015,
+        "dsv": [
+            {
+                "type": "sphere",
+                "params":{
+                    "center": [0.1, 0.2, 0.0],
+                    "radius": 0.1
+                }
+            },
+            {
+                "type": "cylinder",
+                "params":{
+                    "center": [0.0, 0.0, 0.0],
+                    "radius": 0.1,
+                    "height": 0.5,
+                    "axis": "y"
+                }
+            }
+        ]
+    },
+    "algo": [
+        {
+            "type": "ga",
+            "meta": {
+                "popSize": 5,
+                "cxpb": 0.55,
+                "mutpb": 0.4,
+                "ngen": 50,
+                "poolSize": 1
+            },
+            "args": {
+                "desc": "Halbach array desgin",
+                "params": [
+                    [4, 5, 6, 7, 8],
+                    [0.1, 0.2, 0.3, 0.4, 0.5],
+                    [0.01, 0.02, 0.03, 0.04, 0.05]
+                ],
+                "fitness": -1.0
+            }
+        }
+    ],
+    "metrics": [
+        {
+            "type": "strength",
+            "lo": null,
+            "hi": null,
+            "weight": 1.0
+        }
+    ]
+}
