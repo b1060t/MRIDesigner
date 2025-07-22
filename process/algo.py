@@ -19,7 +19,7 @@ class Algorithm:
 
     def run(self):
         raise NotImplementedError("The run method must be implemented by subclasses.")
-    
+ 
 class GeneticAlgorithm(Algorithm):
     def __init__(self, records=[], popSize=100, cxpb=0.55, mutpb=0.4, ngen=50, poolSize=1,
                  args=None, evals=None):
@@ -32,6 +32,7 @@ class GeneticAlgorithm(Algorithm):
         self.ngen = ngen
         self.poolSize = poolSize
         self.args = args if args is not None else {}
+        self.params = self.args['params'] * self.args['repeat']
         self.evals = evals
         self.init()
 
@@ -46,7 +47,7 @@ class GeneticAlgorithm(Algorithm):
     def Ind2Param(self, ind):
         params = []
         for i in range(len(ind)):
-            param = self.args['params'][i]
+            param = self.params[i]
             params.append(param[ind[i]])
         return params
     
@@ -86,12 +87,12 @@ class GeneticAlgorithm(Algorithm):
         self.ga = base.Toolbox()
         creator.create('fitness_' + str(id(self)), base.Fitness, weights=(self.args['fitness'],))
         creator.create('individual_' + str(id(self)), list, fitness=getattr(creator, 'fitness_' + str(id(self))))
-        self.ga.register("indices", self.Indices, params=self.args['params'])
+        self.ga.register("indices", self.Indices, params=self.params)
         self.ga.register("individual", tools.initIterate, getattr(creator, 'individual_' + str(id(self))), self.ga.indices)
         self.ga.register("population", tools.initRepeat, list, self.ga.individual)
         self.ga.register("evaluate", self.Evaluate, eval_tag='internal')
         self.ga.register("crossover", self.Crossover)
-        self.ga.register("mutate", self.Mutate, indpb=0.05, params=self.args['params'])
+        self.ga.register("mutate", self.Mutate, indpb=0.05, params=self.params)
         self.ga.register("select", tools.selTournament, tournsize=3)
         self.pop = self.ga.population(n=self.popSize)
 
