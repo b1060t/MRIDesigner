@@ -66,6 +66,14 @@ class Zone:
     def getSensor(self):
         return magpy.Sensor(pixel=self.coords, style_size=2.5, style_opacity = 0.5)
 
+    def genMeshPoint(self, profile):
+        pointStr = ''
+        pointStr += 'Print[ bz, OnPoint {'+str(self.coords[0, 0])+', '+str(self.coords[0, 1])+', '+str(self.coords[0, 2])+'}, Format Table, File "dsv.txt"];\n'
+        for coord in self.coords[1:]:
+            pointStr += 'Print[ bz, OnPoint {'+str(coord[0])+', '+str(coord[1])+', '+str(coord[2])+'}, Format Table, File >> "dsv.txt"];\n'
+        profile = profile.replace('{DSV_TEMPLATE}', pointStr)
+        return profile
+
     def __add__(self, other):
         if isinstance(other, Zone):
             logger.debug(f"Combining {type(self).__name__} with {type(other).__name__}")

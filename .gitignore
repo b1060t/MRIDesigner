@@ -1,3 +1,6 @@
 **/__pycache__/
+rst
+tmp
+*.bk
 test.ipynb
 *.json

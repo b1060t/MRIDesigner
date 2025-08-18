@@ -2,11 +2,175 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import magpylib as magpy
 import utils.zone
+import gmsh
 
-def checkOverlap(rl, size, num):
+def checkOverlap(rl, size, num=0):
     rs = size / np.sqrt(2)
-    n = np.floor(np.pi / np.arcsin(rs / rl))
-    return num <= n
+    n = int(np.floor(np.pi / np.arcsin(rs / rl))) - 3
+    return num > n, n
+
+def getB_aaa(roi: utils.zone.Zone, ironList=None, magList=None):
+    muiron = ironList[:, 0][:, np.newaxis]
+    muiron = np.repeat(muiron, 3, axis=0)
+    coordiron = ironList[:, 1:4]
+    polarizationiron = ironList[:, 4:7]
+    sizeiron = ironList[:, 7][:, np.newaxis]
+    magiron = magList[:, 0][:, np.newaxis]
+    magiron = np.repeat(magiron, 3, axis=0)
+    coordmag = magList[:, 1:4]
+    polarizationmag = magList[:, 4:7]
+    sizemag = magList[:, 7][:, np.newaxis]
+    G_shape = coordmag.shape[0]
+    F_shape = coordiron.shape[0]
+    mu_0 = 4 * np.pi * 1e-7
+    r_ij = coordiron[:, np.newaxis, :] - coordiron[np.newaxis, :, :]
+    r_norm = np.linalg.norm(r_ij, axis=-1)
+    r_norm_safe = np.where(r_norm > 1e-10, r_norm, 1.0)
+    r_outer = r_ij[:, :, :, np.newaxis] * r_ij[:, :, np.newaxis, :]
+    I = np.eye(3)[np.newaxis, np.newaxis, :, :]
+    r5 = r_norm_safe[:, :, np.newaxis, np.newaxis]**5
+    r3 = r_norm_safe[:, :, np.newaxis, np.newaxis]**3
+    F = (3 * r_outer / r5 - I / r3) / (4 * np.pi)
+    self_mask = r_norm <= 1e-20
+    self_value = np.eye(3) / (120*np.pi)
+    F[self_mask] = self_value[np.newaxis, :]
+    F = F.transpose(0, 2, 1, 3).reshape(3*F_shape, 3*F_shape)
+    r_ij = coordiron[:, np.newaxis, :] - coordmag[np.newaxis, :, :]
+    r_norm = np.linalg.norm(r_ij, axis=-1)
+    r_norm_safe = np.where(r_norm > 1e-10, r_norm, 1.0)
+    r_outer = r_ij[:, :, :, np.newaxis] * r_ij[:, :, np.newaxis, :]
+    I = np.eye(3)[np.newaxis, np.newaxis, :, :]
+    r5 = r_norm_safe[:, :, np.newaxis, np.newaxis]**5
+    r3 = r_norm_safe[:, :, np.newaxis, np.newaxis]**3
+    G = (3 * r_outer / r5 - I / r3) / (4 * np.pi)
+    self_mask = r_norm <= 1e-20
+    self_value = np.eye(3) / (120*np.pi)
+    G[self_mask] = self_value[np.newaxis, :]
+    G = G.transpose(0, 2, 1, 3).reshape(3*F_shape, 3*G_shape)
+    M0 = (polarizationmag * sizemag).reshape(-1, 1) / mu_0
+    I = np.eye(3*F_shape,3*F_shape)
+    A = (muiron / (muiron - 1)) * I - F
+    b = G @ M0
+    M = np.linalg.solve(A, b)
+
+    coordRoi = roi.coords
+    r_ij = coordRoi[:, np.newaxis, :] - coordmag[np.newaxis, :, :]
+    r_norm = np.linalg.norm(r_ij, axis=-1)
+    r_norm_safe = np.where(r_norm > 1e-10, r_norm, 1.0)
+    r_outer = r_ij[:, :, :, np.newaxis] * r_ij[:, :, np.newaxis, :]
+    I = np.eye(3)[np.newaxis, np.newaxis, :, :]
+    r5 = r_norm_safe[:, :, np.newaxis, np.newaxis]**5
+    r3 = r_norm_safe[:, :, np.newaxis, np.newaxis]**3
+    D = (3 * r_outer / r5 - I / r3) / (4 * np.pi)
+    self_mask = r_norm <= 1e-20
+    self_value = np.eye(3) / (120*np.pi)
+    D[self_mask] = self_value[np.newaxis, :]
+    D = D.transpose(0, 2, 1, 3).reshape(3*coordRoi.shape[0], 3*coordmag.shape[0])
+    field = mu_0 * (D @ M0).reshape(-1, 3)
+
+    r_ij = coordRoi[:, np.newaxis, :] - coordiron[np.newaxis, :, :]
+    r_norm = np.linalg.norm(r_ij, axis=-1)
+    r_norm_safe = np.where(r_norm > 1e-10, r_norm, 1.0)
+    r_outer = r_ij[:, :, :, np.newaxis] * r_ij[:, :, np.newaxis, :]
+    I = np.eye(3)[np.newaxis, np.newaxis, :, :]
+    r5 = r_norm_safe[:, :, np.newaxis, np.newaxis]**5
+    r3 = r_norm_safe[:, :, np.newaxis, np.newaxis]**3
+    D = (3 * r_outer / r5 - I / r3) / (4 * np.pi)
+    self_mask = r_norm <= 1e-20
+    self_value = np.eye(3) / (120*np.pi)
+    D[self_mask] = self_value[np.newaxis, :]
+    D = D.transpose(0, 2, 1, 3).reshape(3*coordRoi.shape[0], 3*coordiron.shape[0])
+    field += mu_0 * (D @ M).reshape(-1, 3)
+
+    return field
+
+def getB_mom(roi: utils.zone.Zone, materialList=None):
+    # materialList columns:
+    # 0: mu_r
+    # 1-3: coords
+    # 4-6: polarization
+    # 7: size
+
+    if materialList is None:
+        return ValueError("Material list must be provided for getB_mom.")
+    sizeList = materialList[:, 7][:, np.newaxis]
+    factor = 1e2 / np.power(np.min(sizeList), 1/3)
+    sizeList *= factor ** 3
+    muList = materialList[:, 0][:, np.newaxis]
+    muList = np.repeat(muList, 3, axis=0)
+    coordList = materialList[:, 1:4] * factor
+    polarizationList = materialList[:, 4:7]
+    coordRoi = roi.coords * factor
+
+    J = coordRoi.shape[0]
+    K = coordList.shape[0]
+    mu_0 = 4 * np.pi * 1e-7
+
+    r_ij = coordList[:, np.newaxis, :] - coordList[np.newaxis, :, :]
+    r_norm = np.linalg.norm(r_ij, axis=-1)
+    r_norm_safe = np.where(r_norm > 1e-10, r_norm, 1.0)
+    r_outer = r_ij[:, :, :, np.newaxis] * r_ij[:, :, np.newaxis, :]
+    I = np.eye(3)[np.newaxis, np.newaxis, :, :]
+    r5 = r_norm_safe[:, :, np.newaxis, np.newaxis]**5
+    r3 = r_norm_safe[:, :, np.newaxis, np.newaxis]**3
+    F = (3 * r_outer / r5 - I / r3) / (4 * np.pi)
+    self_mask = r_norm <= 1e-20
+    self_value = np.eye(3) / (12*np.pi)
+    F[self_mask] = self_value[np.newaxis, :]
+    F = F.transpose(0, 2, 1, 3).reshape(3*K, 3*K)
+
+    M0 = (polarizationList * sizeList).reshape(-1, 1) / mu_0
+    I = np.eye(3*K)
+    A = ((muList / (muList - 1)) * I - F) + np.eye(3*K)*1e-12
+    b = F @ M0
+    M = np.linalg.solve(A, b)
+
+    r_ij = coordRoi[:, np.newaxis, :] - coordList[np.newaxis, :, :]
+    r_norm = np.linalg.norm(r_ij, axis=-1)
+    r_norm_safe = np.where(r_norm > 1e-10, r_norm, 1.0)
+    r_outer = r_ij[:, :, :, np.newaxis] * r_ij[:, :, np.newaxis, :]
+    I = np.eye(3)[np.newaxis, np.newaxis, :, :]
+    r5 = r_norm_safe[:, :, np.newaxis, np.newaxis]**5
+    r3 = r_norm_safe[:, :, np.newaxis, np.newaxis]**3
+    D = (3 * r_outer / r5 - I / r3) / (4 * np.pi)
+    self_mask = r_norm <= 1e-20
+    self_value = np.eye(3) / (12*np.pi)
+    D[self_mask] = self_value[np.newaxis, :]
+    D = D.transpose(0, 2, 1, 3).reshape(3*J, 3*K)
+
+    field = mu_0 * (D @ (M+M0)).reshape(-1, 3)
+
+    return field
+
+def getB_fem(roi: utils.zone.Zone, materialList=None):
+    # materialList columns:
+    # 0: mu_r
+    # 1-3: coords
+    # 4-6: polarization
+    # 7: size
+    if materialList is None:
+        return ValueError("Material list must be provided for getB_fem.")
+    
+    gmsh.initialize()
+    gmsh.model.add("MagneticField")
+
+    for mat in materialList:
+        mu_r = mat[0]
+        coords = mat[1:4]
+        polarization = mat[4:7]
+        size = mat[7]
+        
+        gmsh.model.occ.addPoint(coords[0], coords[1], coords[2])
+        gmsh.model.occ.addSphere(coords[0], coords[1], coords[2], size)
+    
+    roi_coords = roi.coords
+    for coord in roi_coords:
+        gmsh.model.occ.addPoint(coord[0], coord[1], coord[2])
+
+    gmsh.model.occ.synchronize()
+    gmsh.model.mesh.generate(3)
+
+    gmsh.finalize()
 
 class MagCollection:
     def __init__(self):
@@ -138,3 +302,50 @@ class RingHalbach(MagCollection):
         ring = HalbachRing(radius, size, magNum, polarization, k)
         ring.setPosition((0, 0, zpos))
         self.addMag(ring.collection)
+
+class PermanentMagnet(MagCollection):
+    def __init__(self, radius=0.1, height=0.1, polarization=1, gap=0.5):
+        super().__init__()
+        self.meta = {
+            'radius': radius,
+            'height': height,
+            'gap': gap,
+            'polarization': polarization
+        }
+
+        upper = magpy.magnet.Cylinder(
+            dimension=(radius, height),
+            position=(0, 0, gap/2+height/2),
+            polarization=(polarization, 0, 0)
+        )
+        self.addMag(upper)
+        lower = magpy.magnet.Cylinder(
+            dimension=(radius, height),
+            position=(0, 0, -gap/2-height/2),
+            polarization=(polarization, 0, 0)
+        )
+        self.addMag(lower)
+
+    def getB_fast(self, roi: utils.zone.Zone):
+        return Exception("Fast B-field calculation not implemented for PermanentMagnet.")
+
+    def getB_fem(self, roi: utils.zone.Zone):
+        gmsh.initialize()
+        #gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.model.add("PermanentMagnet")
+
+        for mag in self.maglist:
+            if isinstance(mag, magpy.magnet.Cylinder):
+                radius, height = mag.dimension
+                pos = mag.position
+                polarization = mag.polarization
+                gmsh.model.occ.addCylinder(pos[0], pos[1], pos[2], 0, 0, height, radius)
+        
+        roi_coords = roi.coords
+        for coord in roi_coords:
+            gmsh.model.occ.addPoint(coord[0], coord[1], coord[2])
+
+        gmsh.model.occ.synchronize()
+        gmsh.model.mesh.generate(3)
+
+        gmsh.finalize()
