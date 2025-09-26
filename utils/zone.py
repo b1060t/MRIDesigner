@@ -74,6 +74,24 @@ class Zone:
         profile = profile.replace('{DSV_TEMPLATE}', pointStr)
         return profile
 
+    def genGrad(self, strength=0.015, gradType='z', axis=2):
+        field = np.zeros_like(self.space, dtype=np.float32)
+        for i in range(self.mask.shape[0]):
+            for j in range(self.mask.shape[1]):
+                for k in range(self.mask.shape[2]):
+                    if self.mask[i,j,k] != 0:
+                        x = self.space[i,j,k,0]
+                        y = self.space[i,j,k,1]
+                        z = self.space[i,j,k,2]
+                        if gradType == 'z':
+                            field[i,j,k,axis] = strength * z
+                        elif gradType == 'x':
+                            field[i,j,k,axis] = strength * x
+                        elif gradType == 'y':
+                            field[i,j,k,axis] = strength * y
+        field = field[self.mask != 0,:]
+        return field
+
     def __add__(self, other):
         if isinstance(other, Zone):
             logger.debug(f"Combining {type(self).__name__} with {type(other).__name__}")

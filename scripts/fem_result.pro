@@ -165,11 +165,11 @@ PostOperation {
   { Name B; NameOfPostProcessing Magnetostatics_a;
     Operation {
       Print[ b, OnElementsOf Domain_All, File "b.pos" ];
-      //Print[ bvec, OnElementsOf Domain_Mag, File "b_mag.pos" ];
-      //Print[ babs, OnElementsOf Domain_All, File "b_abs.pos" ];
-      //Print[ bvec, OnElementsOf Domain_Air, File "b_air.pos" ];
-      //Print[ bz, OnElementsOf DSV, File "dsv_z.pos" ];
-      //Print[ b, OnElementsOf DSV, File "dsv.pos" ];
+      Print[ bvec, OnElementsOf Domain_Mag, File "b_mag.pos" ];
+      Print[ babs, OnElementsOf Domain_All, File "b_abs.pos" ];
+      Print[ bvec, OnElementsOf Domain_Air, File "b_air.pos" ];
+      Print[ bz, OnElementsOf DSV, File "dsv_z.pos" ];
+      Print[ b, OnElementsOf DSV, File "dsv.pos" ];
       Print[ babs, OnElementsOf Domain_Iron, Format Table, File "iron_abs.txt"];
 
       {DSV_TEMPLATE}

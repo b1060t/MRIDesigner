@@ -7,7 +7,7 @@ class Metric:
         self.metric = None
 
     def compute(self, data):
-        self.metric = 0
+        self.metric = data
 
     def get(self, data):
         self.compute(data)
@@ -58,12 +58,22 @@ class MagNumMetric(Metric):
         super().compute(design)
         self.metric = design.getPos().shape[0]
 
+class WeightMetric(Metric):
+    def __init__(self):
+        super().__init__()
+
+    def compute(self, weight):
+        super().compute(weight)
+        self.metric = weight
+
 Metric_LUT = {
     'strength': StrengthMetric,
     'uniformity': UniformityMetric,
     'symuniformity': SymmetricUniformityMetric,
     'length': LengthMetric,
-    'magNum': MagNumMetric
+    'magNum': MagNumMetric,
+    'weight': WeightMetric,
+    'maxB': Metric,
 }
 
 class MetricBuilder:
@@ -85,6 +95,8 @@ class MetricBuilder:
                 var_data = data[var_data]
                 metric = metric.get(var_data)
                 logger.debug(f"Metric {var_type} - Value: {metric}")
+                if metric is None:
+                    raise ValueError(f"Metric {var_type} computation failed.")
                 vars[var_type] = metric
             else:
                 raise ValueError(f"Unknown metric type: {var_type}")

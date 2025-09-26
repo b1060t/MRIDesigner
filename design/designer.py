@@ -25,3 +25,10 @@ class HalbachDesigner(Designer):
         super().getObj(params)
         halbach = process.magnet.Halbach(params, self.meta)
         zpos = self.meta['size'] / 2
+
+class TwoPoleDesigner(Designer):
+    def __init__(self, config_file):
+        super().__init__(config_file)
+
+    def getObj(self, params):
+        return super().getObj(params)

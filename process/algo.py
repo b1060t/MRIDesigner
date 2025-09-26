@@ -4,11 +4,17 @@ import pandas as pd
 from multiprocessing import Pool
 import random
 import logging
+logging.basicConfig(
+    filename='algo.log',
+    filemode='w',
+    level=logging.DEBUG
+)
 logger = logging.getLogger(__name__)
 
 class Algorithm:
     def __init__(self, records=[]):
         logger.info(f"Initializing Algorithm {type(self).__name__}")
+        print(f"Initializing Algorithm {type(self).__name__}")
         self.records = pd.DataFrame(columns=['iteration', 'cur_err', 'best_err']+records)
 
     def init(self):
@@ -16,6 +22,7 @@ class Algorithm:
 
     def loop(self, iteration):
         logger.debug(f"Running loop for iteration {iteration}")
+        print(f"Running loop for iteration {iteration}")
 
     def run(self):
         raise NotImplementedError("The run method must be implemented by subclasses.")
@@ -34,7 +41,10 @@ class GeneticAlgorithm(Algorithm):
         self.args = args if args is not None else {}
         self.params = self.args['params'] * self.args['repeat']
         self.evals = evals
-        self.init()
+        self.cache = {
+            'internal': {},
+            'external': {},
+        }
 
     def Indices(self, params):
         indices = []
@@ -52,13 +62,23 @@ class GeneticAlgorithm(Algorithm):
         return params
     
     def Evaluate(self, ind, eval_tag='internal'):
-        params = self.Ind2Param(ind)
-        try:
-            metric = self.evals[eval_tag](params)
-        except Exception as e:
-            logger.error(f"Error evaluating individual {ind}: {e}")
-            return 0,
-        return metric,
+        ind_str = ','.join(map(str, ind))
+        if ind_str in self.cache[eval_tag].keys():
+            logger.debug(f"Using cached value for individual {ind}")
+            return self.cache[eval_tag][ind_str],
+        else:
+            params = self.Ind2Param(ind)
+            try:
+                metric = self.evals[eval_tag](params)
+                logger.debug(f"Evaluated individual {ind}")
+            except Exception as e:
+                logger.error(f"Error evaluating individual {ind}: {e}")
+                return self.args['fitness']*-np.inf,
+            if metric is None or (isinstance(metric, float) and np.isnan(metric)) or (isinstance(metric, dict) and any(np.isnan(v) for v in metric.values())):
+                logger.error(f"Metric evaluation returned None for individual {ind}")
+                return self.args['fitness']*-np.inf,
+            self.cache[eval_tag][ind_str] = metric
+            return metric,
 
     def Crossover(self, ind1, ind2):
         size = len(ind1)
@@ -81,6 +101,7 @@ class GeneticAlgorithm(Algorithm):
     def init(self):
         super().init()
         logger.info(f"Genetic Algorithm: {self.args['desc']}")
+        print(f"Genetic Algorithm: {self.args['desc']}")
         logger.debug(f"Initializing Genetic Algorithm with population size {self.popSize}")
         logger.debug(f"crossover probability {self.cxpb}, mutation probability {self.mutpb}")
         logger.debug(f"number of generations {self.ngen}, and pool size {self.poolSize}")
@@ -96,8 +117,11 @@ class GeneticAlgorithm(Algorithm):
         self.ga.register("select", tools.selTournament, tournsize=3)
         self.pop = self.ga.population(n=self.popSize)
 
-        with Pool(processes=self.poolSize) as pool:
-            self.fitnesses = pool.map(self.ga.evaluate, self.pop)
+        if self.poolSize > 1:
+            with Pool(processes=self.poolSize) as pool:
+                self.fitnesses = pool.map(self.ga.evaluate, self.pop)
+        else:
+            self.fitnesses = list(map(self.ga.evaluate, self.pop))
         for ind, fit in zip(self.pop, self.fitnesses):
             ind.fitness.values = fit
 
@@ -118,8 +142,11 @@ class GeneticAlgorithm(Algorithm):
                 self.ga.mutate(mutant)
                 del mutant.fitness.values
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-        with Pool(processes=self.poolSize) as pool:
-            fitnesses = pool.map(self.ga.evaluate, invalid_ind)
+        if self.poolSize > 1:
+            with Pool(processes=self.poolSize) as pool:
+                fitnesses = pool.map(self.ga.evaluate, invalid_ind)
+        else:
+            fitnesses = list(map(self.ga.evaluate, invalid_ind))
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         self.pop[:] = offspring
@@ -137,28 +164,53 @@ class GeneticAlgorithm(Algorithm):
             self.err = best_fit
             self.best = self.pop[best_idx]
             logger.info(f"Iteration {iteration}: Best fitness = {self.err}, Best individual = {self.best}")
+            print((f"Iteration {iteration}: Best fitness = {self.err}, Best individual = {self.best}"))
             self.records.loc[len(self.records)-1, 'best_err'] = self.err
             metrics = self.Evaluate(self.best, eval_tag='external')[0]
             for key, value in metrics.items():
                 logger.info(f"  Iteration {iteration}: {key} = {value}")
+                print(f"  Iteration {iteration}: {key} = {value}")
                 self.records.loc[len(self.records)-1, key] = value
         else:
             logger.debug(f"Iteration {iteration}: No improvement, current error = {self.err}")
+            print(f"Iteration {iteration}: No improvement, current error = {self.err}")
             self.records.loc[len(self.records)-1, 'best_err'] = self.err
             metrics = self.Evaluate(self.best, eval_tag='external')[0]
             for key, value in metrics.items():
                 logger.debug(f"  Iteration {iteration}: {key} = {value}")
+                print(f"  Iteration {iteration}: {key} = {value}")
                 self.records.loc[len(self.records)-1, key] = value
     
     def run(self):
+        self.init()
         for iteration in range(self.ngen):
             self.loop(iteration)
         logger.info("------ Genetic Algorithm run completed ------")
         logger.info(f"  Final best fitness: {self.err}, Best individual: {self.best}")
+        print(f"------ Genetic Algorithm run completed ------")
+        print(f"  Final best fitness: {self.err}, Best individual: {self.best}")
         metrics = self.Evaluate(self.best, eval_tag='external')[0]
         for key, value in metrics.items():
             logger.info(f"  {key} = {value}")
+            print(f"  {key} = {value}")
+
+class GeneticAlgorithmFixedInit(GeneticAlgorithm):
+    def __init__(self, records=[], popSize=100, cxpb=0.55, mutpb=0.4, ngen=50, poolSize=1,
+                 args=None, evals=None, initVal=0):
+        super().__init__(records=records, popSize=popSize, cxpb=cxpb, mutpb=mutpb,
+                         ngen=ngen, poolSize=poolSize, args=args, evals=evals)
+        self.initVal = initVal
+
+    def Indices(self, params):
+        indices = []
+        for i in range(len(params)):
+            #param = params[i]
+            index = self.initVal if i > 4 else 0
+            #index = self.initVal
+            indices.append(index)
+        return indices
 
 Algo_LUT = {
     'ga': GeneticAlgorithm,
+    'ga_fixedinit': GeneticAlgorithmFixedInit,
 }
